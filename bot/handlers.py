@@ -131,12 +131,18 @@ MAX_TURNOS_HILO = 6
 
 def _contexto_pendiente(context: ContextTypes.DEFAULT_TYPE) -> list:
     """Si hay una tarjeta esperando confirmación, la conversación que la produjo
-    sirve de contexto para interpretar correcciones («que sea a las 10»)."""
+    sirve de contexto para interpretar correcciones («que sea a las 10»).
+    Los datos exactos van en crudo: al LLM le cuesta extraerlos de la tarjeta."""
     pendiente = context.user_data.get("pendiente") or {}
     if pendiente.get("texto_origen") and pendiente.get("tarjeta"):
+        datos = (
+            f'Datos exactos de la propuesta: mensaje="{pendiente["mensaje"]}", '
+            f'fecha_hora_iso="{pendiente["fecha_iso"]}", '
+            f'recurrencia_rrule={pendiente["rrule"] or "null"}.'
+        )
         return [
             {"role": "user", "content": pendiente["texto_origen"]},
-            {"role": "assistant", "content": pendiente["tarjeta"]},
+            {"role": "assistant", "content": pendiente["tarjeta"] + "\n\n" + datos},
         ]
     return []
 

@@ -6,4 +6,4 @@
 ## 2. Verificación
 
 - [x] 2.1 Extender el smoke test con dobles: aclaración → respuesta corta produce tarjeta; respuesta aún ambigua re-pregunta conservando historial; respuesta sin relación limpia el hilo
-- [ ] 2.2 Probar en real (Pi o PC): reproducir la conversación del bug («recordame comprar leche» → «hoy a las 11:40») y verificar que sale la tarjeta
+- [x] 2.2 Probar en real (Pi o PC): reproducir la conversación del bug («recordame comprar leche» → «hoy a las 11:40») y verificar que sale la tarjeta

@@ -3,7 +3,7 @@
 import json
 import logging
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import List, Optional
 
 from dateutil.rrule import rrulestr
@@ -77,11 +77,18 @@ class NLP:
         """Interpreta un pedido. `historial` son turnos previos de una aclaración
         en curso ({role, content}). Lanza NLPError si la API falla."""
         ahora = datetime.now(self._config.tz)
+        # El día de semana de cada fecha va explícito: el LLM se equivoca
+        # si tiene que calcularlo solo (resolvió "el viernes" al sábado).
+        proximos = ", ".join(
+            f"{DIAS[d.weekday()]} {d.day:02d}/{d.month:02d}"
+            for d in (ahora + timedelta(days=i) for i in range(1, 8))
+        )
         contexto = (
             f"Fecha y hora actual: {DIAS[ahora.weekday()]} "
             f"{ahora.day} de {MESES[ahora.month - 1]} de {ahora.year}, "
             f"{ahora:%H:%M} ({ahora.isoformat()}). "
-            f"Zona horaria del usuario: {self._config.tz_name}."
+            f"Zona horaria del usuario: {self._config.tz_name}. "
+            f"Próximos días: {proximos}."
         )
         try:
             resp = await self._client.chat.completions.create(
