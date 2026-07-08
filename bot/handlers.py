@@ -126,25 +126,37 @@ async def nota_de_voz(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     await _procesar_pedido(update, context, transcripcion)
 
 
+MAX_TURNOS_HILO = 6
+
+
 async def _procesar_pedido(
     update: Update, context: ContextTypes.DEFAULT_TYPE, texto: str
 ) -> None:
     await update.effective_chat.send_action(ChatAction.TYPING)
     nlp = context.bot_data["nlp"]
+    hilo = context.user_data.get("hilo") or []
     try:
-        interp: Interpretacion = await nlp.interpretar(texto)
+        interp: Interpretacion = await nlp.interpretar(texto, historial=hilo)
     except NLPError:
         await update.message.reply_text(MENSAJE_SIN_SERVICIO)
         return
 
     if not interp.es_recordatorio:
+        # La respuesta no vino al caso: el hilo de aclaración muere acá.
+        context.user_data.pop("hilo", None)
         await update.message.reply_text(AYUDA)
         return
 
     if interp.aclaracion:
+        hilo = hilo + [
+            {"role": "user", "content": texto},
+            {"role": "assistant", "content": interp.aclaracion},
+        ]
+        context.user_data["hilo"] = hilo[-MAX_TURNOS_HILO:]
         await update.message.reply_text("🤔 " + interp.aclaracion)
         return
 
+    context.user_data.pop("hilo", None)
     await _mostrar_confirmacion(update, context, interp)
 
 

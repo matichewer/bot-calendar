@@ -33,4 +33,4 @@
 
 - [x] 5.1 `Dockerfile` (python slim, compatible arm64) y `docker-compose.yml` con `restart: unless-stopped`, `.env`, `TZ` y volumen `./data` (SQLite + tokens)
 - [x] 5.2 `README.md`: setup completo (BotFather, API key de Groq, obtener chat ID, OAuth de Google, despliegue con `docker compose up -d --build`)
-- [ ] 5.3 Desplegar en la Pi 4B y verificar en real: recordatorio por texto y por audio, uno recurrente, y supervivencia a un reinicio de la Pi
+- [x] 5.3 Desplegar en la Pi 4B y verificar en real: recordatorio por texto y por audio, uno recurrente, y supervivencia a un reinicio de la Pi

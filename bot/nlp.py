@@ -4,7 +4,7 @@ import json
 import logging
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Optional
+from typing import List, Optional
 
 from dateutil.rrule import rrulestr
 from groq import AsyncGroq
@@ -50,6 +50,7 @@ Reglas:
 - "mañana", "el viernes", "en dos horas", etc. se resuelven con la fecha/hora actual dada.
 - Si dice solo "a la tarde" interpretá 18:00, "a la mañana" 09:00, "al mediodía" 12:00, "a la noche" 21:00.
 - Si intencion es "otro", el resto va null/vacío.
+- Si la conversación tiene mensajes previos, es porque hiciste una pregunta de aclaración: el último mensaje del usuario la responde. Combiná el pedido original con la respuesta en UN solo pedido. Solo usá "otro" si la respuesta no tiene ninguna relación con tu pregunta ni con un recordatorio.
 
 Ejemplos:
 Usuario: "recordame sacar la basura todos los lunes a las 8" (hoy jueves 2026-07-09)
@@ -67,8 +68,11 @@ class NLP:
         self._config = config
         self._client = AsyncGroq(api_key=config.groq_api_key)
 
-    async def interpretar(self, texto: str) -> Interpretacion:
-        """Interpreta un pedido. Lanza NLPError si la API falla."""
+    async def interpretar(
+        self, texto: str, historial: Optional[List[dict]] = None
+    ) -> Interpretacion:
+        """Interpreta un pedido. `historial` son turnos previos de una aclaración
+        en curso ({role, content}). Lanza NLPError si la API falla."""
         ahora = datetime.now(self._config.tz)
         contexto = (
             f"Fecha y hora actual: {DIAS[ahora.weekday()]} "
@@ -84,6 +88,7 @@ class NLP:
                 messages=[
                     {"role": "system", "content": PROMPT_SISTEMA},
                     {"role": "system", "content": contexto},
+                    *(historial or []),
                     {"role": "user", "content": texto},
                 ],
             )
