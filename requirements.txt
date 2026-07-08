@@ -1,0 +1,9 @@
+python-telegram-bot>=21.11,<22
+APScheduler>=3.10,<4
+python-dateutil>=2.9
+groq>=0.13
+python-dotenv>=1.0
+tzdata
+google-api-python-client>=2.150
+google-auth>=2.35
+google-auth-oauthlib>=1.2

@@ -1,0 +1,10 @@
+services:
+  bot:
+    build: .
+    container_name: bot-calendar
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - TZ=${TZ}
+    volumes:
+      - ./data:/app/data
