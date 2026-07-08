@@ -50,7 +50,10 @@ Reglas:
 - "mañana", "el viernes", "en dos horas", etc. se resuelven con la fecha/hora actual dada.
 - Si dice solo "a la tarde" interpretá 18:00, "a la mañana" 09:00, "al mediodía" 12:00, "a la noche" 21:00.
 - Si intencion es "otro", el resto va null/vacío.
-- Si la conversación tiene mensajes previos, es porque hiciste una pregunta de aclaración: el último mensaje del usuario la responde. Combiná el pedido original con la respuesta en UN solo pedido. Solo usá "otro" si la respuesta no tiene ninguna relación con tu pregunta ni con un recordatorio.
+- Si la conversación tiene mensajes previos, son una de dos situaciones:
+  a) Hiciste una pregunta de aclaración: el último mensaje del usuario la responde. Combiná el pedido original con la respuesta en UN solo pedido.
+  b) Propusiste un recordatorio que espera confirmación (el mensaje con "¿Lo confirmo?"): si el usuario pide un cambio («que sea a las 10», «mejor el jueves»), devolvé el recordatorio COMPLETO corregido, conservando los campos que no pidió cambiar. Si en cambio pide recordar otra cosa, interpretalo como pedido nuevo.
+  En ambos casos, usá "otro" solo si el último mensaje no tiene ninguna relación con recordatorios.
 
 Ejemplos:
 Usuario: "recordame sacar la basura todos los lunes a las 8" (hoy jueves 2026-07-09)

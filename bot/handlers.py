@@ -129,12 +129,26 @@ async def nota_de_voz(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 MAX_TURNOS_HILO = 6
 
 
+def _contexto_pendiente(context: ContextTypes.DEFAULT_TYPE) -> list:
+    """Si hay una tarjeta esperando confirmación, la conversación que la produjo
+    sirve de contexto para interpretar correcciones («que sea a las 10»)."""
+    pendiente = context.user_data.get("pendiente") or {}
+    if pendiente.get("texto_origen") and pendiente.get("tarjeta"):
+        return [
+            {"role": "user", "content": pendiente["texto_origen"]},
+            {"role": "assistant", "content": pendiente["tarjeta"]},
+        ]
+    return []
+
+
 async def _procesar_pedido(
     update: Update, context: ContextTypes.DEFAULT_TYPE, texto: str
 ) -> None:
     await update.effective_chat.send_action(ChatAction.TYPING)
     nlp = context.bot_data["nlp"]
-    hilo = context.user_data.get("hilo") or []
+    # Un hilo de aclaración en curso ya trae la conversación más reciente;
+    # si no hay, una tarjeta pendiente aporta su propio contexto.
+    hilo = context.user_data.get("hilo") or _contexto_pendiente(context)
     try:
         interp: Interpretacion = await nlp.interpretar(texto, historial=hilo)
     except NLPError:
@@ -143,6 +157,7 @@ async def _procesar_pedido(
 
     if not interp.es_recordatorio:
         # La respuesta no vino al caso: el hilo de aclaración muere acá.
+        # La tarjeta pendiente (si hay) queda intacta y sigue siendo confirmable.
         context.user_data.pop("hilo", None)
         await update.message.reply_text(AYUDA)
         return
@@ -157,11 +172,14 @@ async def _procesar_pedido(
         return
 
     context.user_data.pop("hilo", None)
-    await _mostrar_confirmacion(update, context, interp)
+    await _mostrar_confirmacion(update, context, interp, texto)
 
 
 async def _mostrar_confirmacion(
-    update: Update, context: ContextTypes.DEFAULT_TYPE, interp: Interpretacion
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    interp: Interpretacion,
+    texto_origen: str,
 ) -> None:
     # Un pedido nuevo reemplaza al pendiente anterior (la tarjeta vieja queda inerte).
     anterior = context.user_data.get("pendiente")
@@ -191,13 +209,16 @@ async def _mostrar_confirmacion(
             InlineKeyboardButton("❌ Cancelar", callback_data=f"conf:no:{token}"),
         ]]
     )
-    msg = await update.message.reply_text("\n".join(lineas), reply_markup=teclado)
+    tarjeta = "\n".join(lineas)
+    msg = await update.message.reply_text(tarjeta, reply_markup=teclado)
     context.user_data["pendiente"] = {
         "token": token,
         "mensaje": interp.mensaje,
         "fecha_iso": interp.fecha_hora.isoformat(),
         "rrule": interp.rrule,
         "msg_id": msg.message_id,
+        "texto_origen": texto_origen,
+        "tarjeta": tarjeta,
     }
 
 
