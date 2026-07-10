@@ -19,6 +19,8 @@ AYUDA = (
     "Decime (por texto o audio) qué querés que te recuerde y cuándo. Ejemplos:\n"
     "• «recordame llamar al médico mañana a las 10»\n"
     "• «recordame sacar la basura todos los lunes a las 8»\n\n"
+    "También podés mandarme una foto 📸 (una invitación, un cronograma de "
+    "exámenes) y te propongo los eventos que encuentre.\n\n"
     "Comandos:\n"
     "/lista — ver y cancelar recordatorios activos"
 )
@@ -126,6 +128,78 @@ async def nota_de_voz(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     await _procesar_pedido(update, context, transcripcion)
 
 
+# --- Fotos (invitaciones, cronogramas) ---------------------------------------
+
+async def foto(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await update.effective_chat.send_action(ChatAction.TYPING)
+    nlp = context.bot_data["nlp"]
+    try:
+        # La última variante es la de mayor resolución que ofrece Telegram.
+        archivo = await update.message.photo[-1].get_file()
+        imagen = bytes(await archivo.download_as_bytearray())
+    except Exception:
+        logger.exception("Fallo descargando la foto")
+        await update.message.reply_text("😕 No pude descargar la foto. Probá de nuevo.")
+        return
+
+    try:
+        eventos, omitidos = await nlp.interpretar_imagen(imagen, update.message.caption)
+    except NLPError:
+        await update.message.reply_text(MENSAJE_SIN_SERVICIO)
+        return
+
+    # Una foto nueva reemplaza las tarjetas de imagen anteriores no respondidas.
+    await _reemplazar_tarjetas_imagen(update, context)
+
+    if not eventos:
+        lineas = ["🔍 No encontré eventos con fecha en la imagen."]
+        if omitidos:
+            lineas.append("⚠️ Vi mencionados, pero sin fecha clara: " + "; ".join(omitidos))
+        await update.message.reply_text("\n".join(lineas))
+        return
+
+    if len(eventos) > 1:
+        await update.message.reply_text(
+            f"📸 Encontré {len(eventos)} eventos en la imagen. Confirmá cada uno:"
+        )
+
+    pendientes = {}
+    for interp in eventos:
+        token, tarjeta, teclado = _armar_tarjeta(interp)
+        msg = await update.message.reply_text(tarjeta, reply_markup=teclado)
+        pendientes[token] = {
+            "token": token,
+            "mensaje": interp.mensaje,
+            "fecha_iso": interp.fecha_hora.isoformat(),
+            "rrule": interp.rrule,
+            "msg_id": msg.message_id,
+        }
+    context.user_data["pendientes_imagen"] = pendientes
+
+    if omitidos:
+        await update.message.reply_text(
+            "⚠️ No pude ubicar fecha para: " + "; ".join(omitidos)
+        )
+
+
+async def _reemplazar_tarjetas_imagen(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """Deja inertes las tarjetas de imagen previas, editando sus mensajes."""
+    viejas = context.user_data.pop("pendientes_imagen", None) or {}
+    for propuesta in viejas.values():
+        if not propuesta.get("msg_id"):
+            continue
+        try:
+            await context.bot.edit_message_text(
+                chat_id=update.effective_chat.id,
+                message_id=propuesta["msg_id"],
+                text="↩️ Reemplazado por un pedido más nuevo.",
+            )
+        except Exception:
+            pass
+
+
 MAX_TURNOS_HILO = 6
 
 
@@ -188,6 +262,27 @@ async def _procesar_pedido(
     await _mostrar_confirmacion(update, context, interp, texto)
 
 
+def _armar_tarjeta(interp: Interpretacion):
+    """Tarjeta de confirmación con su token y teclado. Formato compartido por
+    las propuestas de texto/voz y las de imagen."""
+    token = uuid.uuid4().hex[:8]
+    lineas = [
+        "📋 Nuevo recordatorio\n",
+        f"📝 {interp.mensaje}",
+        f"🗓 {formatear_fecha(interp.fecha_hora)}",
+    ]
+    if interp.rrule:
+        lineas.append(f"🔁 {describir_recurrencia(interp.rrule, interp.fecha_hora)}")
+    lineas.append("\n¿Lo confirmo?")
+    teclado = InlineKeyboardMarkup(
+        [[
+            InlineKeyboardButton("✅ Confirmar", callback_data=f"conf:si:{token}"),
+            InlineKeyboardButton("❌ Cancelar", callback_data=f"conf:no:{token}"),
+        ]]
+    )
+    return token, "\n".join(lineas), teclado
+
+
 async def _mostrar_confirmacion(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
@@ -206,23 +301,7 @@ async def _mostrar_confirmacion(
         except Exception:
             pass
 
-    token = uuid.uuid4().hex[:8]
-    lineas = [
-        "📋 Nuevo recordatorio\n",
-        f"📝 {interp.mensaje}",
-        f"🗓 {formatear_fecha(interp.fecha_hora)}",
-    ]
-    if interp.rrule:
-        lineas.append(f"🔁 {describir_recurrencia(interp.rrule, interp.fecha_hora)}")
-    lineas.append("\n¿Lo confirmo?")
-
-    teclado = InlineKeyboardMarkup(
-        [[
-            InlineKeyboardButton("✅ Confirmar", callback_data=f"conf:si:{token}"),
-            InlineKeyboardButton("❌ Cancelar", callback_data=f"conf:no:{token}"),
-        ]]
-    )
-    tarjeta = "\n".join(lineas)
+    token, tarjeta, teclado = _armar_tarjeta(interp)
     msg = await update.message.reply_text(tarjeta, reply_markup=teclado)
     context.user_data["pendiente"] = {
         "token": token,
@@ -235,47 +314,32 @@ async def _mostrar_confirmacion(
     }
 
 
-async def callback_confirmacion(
-    update: Update, context: ContextTypes.DEFAULT_TYPE
-) -> None:
-    query = update.callback_query
-    await query.answer()
-    _, accion, token = query.data.split(":", 2)
-
-    pendiente = context.user_data.get("pendiente")
-    if pendiente is None or pendiente["token"] != token:
-        await query.edit_message_text(
-            "Este pedido ya no está vigente. Mandámelo de nuevo si lo querés."
-        )
-        return
-
-    context.user_data.pop("pendiente", None)
-
-    if accion == "no":
-        await query.edit_message_text("❌ Descartado. No guardé nada.")
-        return
-
+async def _confirmar_propuesta(
+    context: ContextTypes.DEFAULT_TYPE, chat_id: int, propuesta: dict
+) -> str:
+    """Persiste, programa y espeja una propuesta confirmada. Devuelve el texto
+    de respuesta. Camino común a las tarjetas de texto/voz y de imagen."""
     db = context.bot_data["db"]
     scheduler = context.bot_data["scheduler"]
     gcal = context.bot_data["gcal"]
 
-    fecha = datetime.fromisoformat(pendiente["fecha_iso"])
+    fecha = datetime.fromisoformat(propuesta["fecha_iso"])
     reminder_id = db.crear(
-        chat_id=update.effective_chat.id,
-        texto=pendiente["mensaje"],
-        proxima_ejecucion=pendiente["fecha_iso"],
-        recurrencia=pendiente["rrule"],
+        chat_id=chat_id,
+        texto=propuesta["mensaje"],
+        proxima_ejecucion=propuesta["fecha_iso"],
+        recurrencia=propuesta["rrule"],
     )
     scheduler.programar(reminder_id, fecha)
 
     lineas = [f"✅ Listo. Te lo recuerdo el {formatear_fecha(fecha)}."]
-    if pendiente["rrule"]:
+    if propuesta["rrule"]:
         lineas.append(
-            f"🔁 Se repite: {describir_recurrencia(pendiente['rrule'], fecha)}"
+            f"🔁 Se repite: {describir_recurrencia(propuesta['rrule'], fecha)}"
         )
 
     resultado, event_id = await gcal.crear_evento(
-        pendiente["mensaje"], fecha, pendiente["rrule"]
+        propuesta["mensaje"], fecha, propuesta["rrule"]
     )
     if resultado == ResultadoEspejo.OK:
         db.guardar_gcal_event_id(reminder_id, event_id)
@@ -291,4 +355,33 @@ async def callback_confirmacion(
             "(ver README). Mientras tanto sigo funcionando sin calendario."
         )
 
-    await query.edit_message_text("\n".join(lineas))
+    return "\n".join(lineas)
+
+
+async def callback_confirmacion(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    query = update.callback_query
+    await query.answer()
+    _, accion, token = query.data.split(":", 2)
+
+    # El token puede ser de la propuesta de texto/voz o de una tarjeta de imagen.
+    pendiente = context.user_data.get("pendiente")
+    if pendiente is not None and pendiente["token"] == token:
+        context.user_data.pop("pendiente", None)
+        propuesta = pendiente
+    else:
+        propuesta = (context.user_data.get("pendientes_imagen") or {}).pop(token, None)
+
+    if propuesta is None:
+        await query.edit_message_text(
+            "Este pedido ya no está vigente. Mandámelo de nuevo si lo querés."
+        )
+        return
+
+    if accion == "no":
+        await query.edit_message_text("❌ Descartado. No guardé nada.")
+        return
+
+    texto = await _confirmar_propuesta(context, update.effective_chat.id, propuesta)
+    await query.edit_message_text(texto)

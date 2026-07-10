@@ -20,6 +20,7 @@ class Config:
     tz_name: str
     db_path: Path
     groq_model: str
+    groq_vision_model: str
     groq_whisper_model: str
     google_token_path: Path
     google_credentials_path: Path
@@ -72,6 +73,9 @@ def cargar_config() -> Config:
         tz_name=tz_name,
         db_path=Path(os.environ.get("DB_PATH", data_dir / "reminders.db")),
         groq_model=os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile"),
+        groq_vision_model=os.environ.get(
+            "GROQ_VISION_MODEL", "meta-llama/llama-4-scout-17b-16e-instruct"
+        ),
         groq_whisper_model=os.environ.get("GROQ_WHISPER_MODEL", "whisper-large-v3-turbo"),
         google_token_path=Path(os.environ.get("GOOGLE_TOKEN_PATH", data_dir / "token.json")),
         google_credentials_path=Path(

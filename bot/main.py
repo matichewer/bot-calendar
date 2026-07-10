@@ -66,6 +66,7 @@ def main() -> None:
     app.add_handler(CallbackQueryHandler(handlers.callback_borrar, pattern=r"^del:"))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handlers.mensaje_texto))
     app.add_handler(MessageHandler(filters.VOICE, handlers.nota_de_voz))
+    app.add_handler(MessageHandler(filters.PHOTO, handlers.foto))
 
     app.run_polling(allowed_updates=Update.ALL_TYPES)
 
